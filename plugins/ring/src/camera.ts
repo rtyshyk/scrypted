@@ -14,6 +14,8 @@ import { BasicPeerConnection, CameraData, clientApi, isStunMessage, RingBaseApi,
 import { encodeSrtpOptions, getPayloadType, getSequenceNumber, isRtpMessagePayloadType } from './srtp-utils';
 
 const STREAM_TIMEOUT = 120000;
+// consumers do not always end live sessions (e.g. HomeKit), which keeps a battery camera streaming until it is drained
+const MAX_LIVE_SESSION_DURATION = 10 * 60 * 1000;
 const { deviceManager, mediaManager, systemManager } = sdk;
 
 class RingWebSocketRTCSessionControl implements RTCSessionControl {
@@ -644,6 +646,17 @@ export class RingCameraDevice extends ScryptedDeviceBase implements DeviceProvid
             //     onConnectionState.next('connected');
             // }, 5000);
         }
+
+        const control = sessionControl;
+        const maxDurationTimeout = setTimeout(() => {
+            this.console.warn('live session reached the maximum duration, ending it');
+            control.endSession().catch(e => this.console.error('error ending live session', e));
+        }, MAX_LIVE_SESSION_DURATION);
+        const endSession = control.endSession.bind(control);
+        control.endSession = async () => {
+            clearTimeout(maxDurationTimeout);
+            await endSession();
+        };
 
         return sessionControl;
     }
